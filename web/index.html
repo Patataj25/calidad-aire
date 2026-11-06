@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calidad del aire por estación</title>
+<style>
+:root{--fondo:#eef2f4;--tinta:#1d2a33;--suave:#5b6b76;--linea:#d3dce1}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--fondo);color:var(--tinta)}
+main{max-width:820px;margin:0 auto;padding:24px 16px}
+h1{font-size:1.6rem;margin:8px 0 4px}
+a{color:inherit}
+.sub{color:var(--suave);margin:0 0 20px}
+.est{display:block;text-decoration:none;background:#fff;border:1px solid var(--linea);border-left:8px solid var(--c);padding:12px 16px;margin-bottom:10px;border-radius:4px}
+.est b{font-size:1.1rem}
+.est span{display:block;color:var(--suave)}
+.tabla{overflow-x:auto}
+table{width:100%;border-collapse:collapse;background:#fff}
+td,th{padding:6px 10px;border-bottom:1px solid var(--linea);text-align:left;white-space:nowrap}
+th small{font-weight:400;color:var(--suave)}
+.barra{height:10px;background:var(--c);width:var(--w);min-width:2px}
+.err{background:#fde8e8;padding:12px;border-radius:4px}
+</style>
+</head>
+<body>
+<main id="app">Cargando… (la primera vez puede tardar hasta un minuto)</main>
+<script>
+// ⚠️ Cambia esta URL por la de tu API en Render (sin diagonal al final).
+const API = 'http://localhost:3000';
+
+const COLOR = { 'Bueno': '#2f9e44', 'Moderado': '#e6b800', 'Dañino para sensibles': '#f08c00', 'Malo': '#d9480f', 'Sin dato': '#9aa5ab' };
+const app = document.getElementById('app');
+const get = async (p) => { const r = await fetch(API + p); if (!r.ok) throw new Error(r.status); return r.json(); };
+const fecha = (h) => new Date(h).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function lista() {
+  const est = await get('/api/estaciones');
+  app.innerHTML = '<h1>Calidad del aire</h1><p class="sub">Última lectura por estación</p>' +
+    est.map((e) => {
+      const principal = e.pm25 != null
+        ? `PM2.5: ${e.pm25} µg/m³. ${e.nivel}`
+        : e.ultimas.length
+          ? e.ultimas.slice(0, 3).map((u) => `${esc(u.mostrar)} ${u.valor} ${esc(u.unidad)}`).join(', ')
+          : 'Sin lecturas';
+      return `<a class="est" style="--c:${COLOR[e.nivel]}" href="#/estacion/${e.id}">
+        <b>${esc(e.nombre)}</b>
+        <span>${principal}${e.hora ? ' (' + fecha(e.hora) + ')' : ''}</span>
+        <span>${esc(e.proveedor)}${e.pais ? ', ' + esc(e.pais) : ''}</span></a>`;
+    }).join('');
+}
+
+async function detalle(id) {
+  const [est, d] = await Promise.all([get('/api/estaciones'), get(`/api/estaciones/${id}/lecturas`)]);
+  const e = est.find((x) => x.id == id);
+  app.innerHTML = `<a href="#/">← Todas las estaciones</a><h1>${esc(e.nombre)}</h1>
+    <p class="sub">${esc(e.proveedor)}. Últimas lecturas disponibles</p>
+    <div class="tabla"><table><tr><th>Hora</th>` +
+    d.columnas.map((c) => `<th>${esc(c.mostrar)}<br><small>${esc(c.unidad)}</small></th>`).join('') + '<th></th></tr>' +
+    d.filas.map((f) => `<tr><td>${fecha(f.hora)}</td>` +
+      d.columnas.map((c) => `<td>${f.valores[c.parametro] ?? '-'}</td>`).join('') +
+      `<td style="width:15%"><div class="barra" style="--c:${COLOR[f.nivel]};--w:${Math.min(f.valores.pm25 ?? 0, 100)}%"></div></td></tr>`).join('') +
+    '</table></div>';
+}
+
+async function ruta() {
+  try {
+    const m = location.hash.match(/^#\/estacion\/(\d+)/);
+    await (m ? detalle(m[1]) : lista());
+  } catch (err) {
+    app.innerHTML = '<p class="err">No se pudo conectar con la API. Si está recién desplegada o dormida, espera un minuto y recarga. Verifica también la constante API en este archivo.</p>';
+  }
+}
+addEventListener('hashchange', ruta);
+ruta();
+</script>
+</body>
+</html>
